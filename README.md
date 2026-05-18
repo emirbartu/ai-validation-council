@@ -4,11 +4,12 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.1-orange)](https://langchain-ai.github.io/langgraph/)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue)](LICENSE)
 [![React Doctor](https://img.shields.io/badge/react--doctor-96%25-success)](https://react.doctor)
 
 Multi-agent AI council that validates startup ideas through adversarial debate
 with real-time Reddit & Hacker News data collection.
+> ⚠️ **Non-Commercial Use Only.** This software is licensed under the PolyForm Noncommercial License. Commercial use, including use within revenue-generating products or services, is prohibited without a separate commercial license from the copyright holder.
 
 ---
 
