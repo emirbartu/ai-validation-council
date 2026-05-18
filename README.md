@@ -313,8 +313,6 @@ asyncio.run(main())
 | 3 — Simulation + UI | 🔜 Planned | Monte Carlo scenarios, GTM simulations, SSE streaming from backend to dashboard |
 | 4 — Deploy + Polish | 🔜 Planned | PDF report generation, user accounts, Railway deployment, cost dashboard, CI/CD |
 
-Full technical plan: `ai-validation-council-master-plan.md`
-
 ## License
 
 PolyForm Noncommercial 1.0.0 — see [LICENSE](LICENSE) for details. Commercial use prohibited.
