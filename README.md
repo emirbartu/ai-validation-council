@@ -297,11 +297,11 @@ asyncio.run(main())
 ## Known Limitations
 
 - **Reddit data bias** — Demographics skew male, 20–35, Western, technical. Strong for SaaS and developer tools. Weak for healthcare, logistics, agriculture, non-English markets.
-- **Free model rate limits** — Some providers may return 429s. Retry logic handles this but analyses are slower during rate-limit windows.
+- **Rate limits** — Some LLM providers may return 429s. Retry logic handles this but analyses are slower during rate-limit windows.
 - **Confidence = 0 with single source is correct** — Per the formula, this means "collect more data," not "your idea is bad."
 - **No Serper key = no Reddit data** — HN-only analysis works but is less rich. Get a Serper key for full coverage.
 - **Phase 1 memory is in-process** — MemPalace persistence is in-memory. Cross-restart persistence is Phase 4.
-- **Single-round debate on free tier** — Architecture supports 3 rounds but defaults to 1 to avoid rate limits.
+- **Single-round debate on default config** — Architecture supports 3 rounds but defaults to 1 to avoid rate limits.
 - **No CI/CD yet** — GitHub Actions and application Dockerfiles are tracked for Phase 4.
 
 ## Roadmap
@@ -317,4 +317,4 @@ Full technical plan: `ai-validation-council-master-plan.md`
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+PolyForm Noncommercial 1.0.0 — see [LICENSE](LICENSE) for details. Commercial use prohibited.
