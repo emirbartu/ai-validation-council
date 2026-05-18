@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Alembic
+alembic/versions/*.pyc
+
+# MemPalace
+.mempalace/
+
+# Workspace
+workspace/
+.council_workspace/
+
+# Qdrant data (local dev)
+qdrant_data/
+
+# UV
+uv.lock
+
+# Runtime data (app settings, cached analyses)
+data/
+
+# Dashboard
+dashboard/.next/
+dashboard/node_modules/
+
+# Environment overrides
+*.env
+*.env.*
+
+# Bun
+bun.lockb
+ai-validation-council-master-plan.md
