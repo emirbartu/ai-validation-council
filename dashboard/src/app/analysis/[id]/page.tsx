@@ -26,6 +26,7 @@ function TimestampDisplay({ timestamp }: { timestamp: string }) {
   const [formatted, setFormatted] = useState("");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFormatted(
       new Date(timestamp).toLocaleDateString(undefined, {
         year: "numeric",

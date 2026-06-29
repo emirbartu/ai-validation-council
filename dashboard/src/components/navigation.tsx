@@ -29,16 +29,13 @@ export function Navigation() {
         <nav className="flex items-center gap-1">
           {navItems.map((item) => {
             const isActive =
-              !item.external &&
-              (item.href === "/"
+              item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href));
+                : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                target={item.external ? "_blank" : undefined}
-                rel={item.external ? "noopener noreferrer" : undefined}
                 className={cn(
                   "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                   isActive

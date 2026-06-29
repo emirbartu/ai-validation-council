@@ -53,9 +53,6 @@ async def detect_divergence(agent_outputs: list[dict[str, Any]]) -> list[dict[st
         api_key = settings.divergence_api_key.get_secret_value() if settings.divergence_api_key else None
         base_url = settings.divergence_base_url
 
-        if not base_url and settings.divergence_provider:
-            base_url = settings.divergence_base_url
-
         if not base_url:
             base_url = ""
 

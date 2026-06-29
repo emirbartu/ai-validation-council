@@ -63,9 +63,6 @@ async def _extract_structured_data(agent_outputs: list[dict[str, Any]]) -> dict[
     api_key = settings.report_api_key.get_secret_value() if settings.report_api_key else None
     base_url = settings.report_base_url
 
-    if not base_url and settings.report_provider:
-        base_url = settings.report_base_url
-
     if not base_url:
         base_url = ""
 

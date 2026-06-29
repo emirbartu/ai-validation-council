@@ -22,6 +22,7 @@ function TimestampCell({ timestamp }: { timestamp: string | null }) {
 
   useEffect(() => {
     if (timestamp) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormatted(new Date(timestamp).toLocaleDateString());
     }
   }, [timestamp]);

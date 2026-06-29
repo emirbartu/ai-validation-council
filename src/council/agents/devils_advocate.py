@@ -211,9 +211,6 @@ async def _call_devils_advocate(
     api_key = settings.devils_advocate_api_key.get_secret_value() if settings.devils_advocate_api_key else None
     base_url = settings.devils_advocate_base_url
 
-    if not base_url and settings.devils_advocate_provider:
-        base_url = settings.devils_advocate_base_url
-
     if not base_url:
         base_url = ""
 

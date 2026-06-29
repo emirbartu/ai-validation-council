@@ -101,9 +101,6 @@ async def market_analyst_node(state: dict[str, Any]) -> dict[str, Any]:
         api_key = settings.market_analyst_api_key.get_secret_value() if settings.market_analyst_api_key else None
         base_url = settings.market_analyst_base_url
 
-        if not base_url and settings.market_analyst_provider:
-            base_url = settings.market_analyst_base_url
-
         if not base_url:
             base_url = ""
 

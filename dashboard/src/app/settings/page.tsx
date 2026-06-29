@@ -106,6 +106,7 @@ function AgentCard({
   prefix,
   initialProvider,
   onProviderChange,
+  onSaved,
 }: {
   title: string;
   badge: string;
@@ -117,11 +118,25 @@ function AgentCard({
   prefix: string;
   initialProvider: string;
   onProviderChange: (v: string) => void;
+  onSaved?: () => void;
 }) {
   const [m, setM] = useState(model || "");
   const [url, setUrl] = useState(baseUrl || "");
   const [key, setKey] = useState(apiKey && apiKey !== "**********" ? apiKey : "");
   const [provider, setProvider] = useState(initialProvider || "");
+  useEffect(() => {
+    // Sync local state from server props when parent refetches settings.
+    // Disabled for the cascading-renders lint rule: this is the supported
+    // escape hatch when local edits must coexist with prop-driven resets.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setM(model || "");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUrl(baseUrl || "");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setKey(apiKey && apiKey !== "**********" ? apiKey : "");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProvider(initialProvider || "");
+  }, [model, baseUrl, apiKey, initialProvider]);
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -171,6 +186,7 @@ function AgentCard({
       onProviderChange(provider);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      onSaved?.();
     } catch (err) {
       setTestResult({
         success: false,
@@ -205,6 +221,7 @@ function AgentCard({
         <div className="space-y-2">
           <label className="text-sm font-medium">Model</label>
           <Input
+            value={m}
             onChange={(e) => setM(e.target.value)}
             placeholder="e.g. gpt-4o-mini"
           />
@@ -245,6 +262,7 @@ function AgentCard({
           <select
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
+            disabled={saving}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-foreground"
           >
             {PROVIDER_OPTIONS.map((opt) => (
@@ -382,6 +400,15 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  async function refetch() {
+    try {
+      const data = await getSettings();
+      setSettings(data.settings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load settings");
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-8">
@@ -442,6 +469,7 @@ export default function SettingsPage() {
               prefix="market_analyst"
               initialProvider={settings.market_analyst_provider}
               onProviderChange={(v) => setSettings(s => s ? {...s, market_analyst_provider: v} : s)}
+              onSaved={refetch}
             />
             <AgentCard
               title="Devil's Advocate"
@@ -454,6 +482,7 @@ export default function SettingsPage() {
               prefix="devils_advocate"
               initialProvider={settings.devils_advocate_provider}
               onProviderChange={(v) => setSettings(s => s ? {...s, devils_advocate_provider: v} : s)}
+              onSaved={refetch}
             />
             <AgentCard
               title="Divergence Detector"
@@ -466,6 +495,7 @@ export default function SettingsPage() {
               prefix="divergence"
               initialProvider={settings.divergence_provider}
               onProviderChange={(v) => setSettings(s => s ? {...s, divergence_provider: v} : s)}
+              onSaved={refetch}
             />
           </div>
         )}
