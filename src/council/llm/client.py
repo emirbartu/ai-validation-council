@@ -101,8 +101,7 @@ class SpendingTracker:
                 )
             )
         logger.info(
-            "llm_usage_tracked model={} prompt_tokens={} completion_tokens={} "
-            "trace_id={}",
+            "llm_usage_tracked model={} prompt_tokens={} completion_tokens={} trace_id={}",
             model,
             prompt_tokens,
             completion_tokens,
@@ -117,9 +116,7 @@ class SpendingTracker:
     async def check_limit(self, limit_usd: float) -> None:
         total = await self.get_daily_total()
         if total > limit_usd:
-            msg = (
-                f"Daily spending limit exceeded: ${total:.6f} > ${limit_usd:.6f}"
-            )
+            msg = f"Daily spending limit exceeded: ${total:.6f} > ${limit_usd:.6f}"
             raise SpendingLimitError(msg)
 
 
@@ -136,9 +133,7 @@ class AsyncLLMClient:
 
     def __init__(self) -> None:
         settings = get_settings()
-        self.api_key = (
-            settings.llm_api_key.get_secret_value() if settings.llm_api_key else ""
-        )
+        self.api_key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else ""
         self.daily_limit = settings.llm_daily_limit
         self.tracker = get_spending_tracker()
 

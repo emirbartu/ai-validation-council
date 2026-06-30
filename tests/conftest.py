@@ -59,7 +59,11 @@ def sample_agent_outputs():
             "role": "devils_advocate",
             "content": "Kill Shot 1: Market Kill Shot — The dental software market has 3 dominant players with $50M+ revenue each. This startup has zero distribution in a relationship-driven industry. Data: Dentrix (35% share), Eaglesoft (28%), OpenDental (18%).",
             "kill_shots": [
-                {"title": "Entrenched Competitors", "reasoning": "3 dominant players with 81% combined market share", "data_point": "Dentrix: 35%, Eaglesoft: 28%, OpenDental: 18%"}
+                {
+                    "title": "Entrenched Competitors",
+                    "reasoning": "3 dominant players with 81% combined market share",
+                    "data_point": "Dentrix: 35%, Eaglesoft: 28%, OpenDental: 18%",
+                }
             ],
             "verdict": "This idea dies from entrenched competition and high switching costs.",
             "forbidden_check_passed": True,

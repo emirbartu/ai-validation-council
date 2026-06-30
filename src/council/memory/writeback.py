@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from council.logging_config import logger
 from council.memory.mempalace import CouncilMemoryManager
+
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+HISTORY_FILE = DATA_DIR / "history.jsonl"
 
 _memory_manager: CouncilMemoryManager | None = None
 
@@ -13,9 +21,27 @@ _memory_manager: CouncilMemoryManager | None = None
 def _get_memory() -> CouncilMemoryManager:
     global _memory_manager
     if _memory_manager is None:
-        _memory_manager = CouncilMemoryManager()
+        from council.config import get_settings
+
+        settings = get_settings()
+        _memory_manager = CouncilMemoryManager(
+            storage_path=settings.mempalace_path,
+        )
         _memory_manager.ensure_wings()
     return _memory_manager
+
+
+def _append_history(record: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+
+def _load_history() -> list[dict[str, Any]]:
+    if not HISTORY_FILE.exists():
+        return []
+    with open(HISTORY_FILE, encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
 async def store_analysis_results(
@@ -24,17 +50,32 @@ async def store_analysis_results(
     divergence_points: list[dict[str, Any]],
     confidence_score: float,
     report: dict[str, Any] | None = None,
+    divergence_status: str = "parsed",
 ) -> str:
+    analysis_id = str(uuid.uuid4())[:8]
+
+    record = {
+        "id": analysis_id,
+        "query": query,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "agent_outputs": agent_outputs,
+        "divergence_points": divergence_points,
+        "divergence_status": divergence_status,
+        "confidence_score": confidence_score,
+        "report": report,
+    }
+    _append_history(record)
+    logger.info(
+        "history_saved analysis_id={} file={} divergence_status={}",
+        analysis_id,
+        HISTORY_FILE,
+        divergence_status,
+    )
+
     memory = _get_memory()
-    import uuid as _uuid
-
-    analysis_id = str(_uuid.uuid4())[:8]
-
     for output in agent_outputs:
         role = output.get("role", "unknown")
-        agent_name = role
-        memory.store_agent_output(agent_name, analysis_id, output)
-        logger.info("mempalace_stored agent={} analysis_id={}", agent_name, analysis_id)
+        memory.store_agent_output(role, analysis_id, output)
 
     for agent_name in ["market_analyst", "devils_advocate"]:
         memory.store_diary_entry(
@@ -44,114 +85,50 @@ async def store_analysis_results(
         )
 
     if report:
-        import json as _json
-        memory.store_diary_entry(
-            "council",
-            f"REPORT:{analysis_id}|{_json.dumps(report)}",
-        )
-        logger.info("report_stored analysis_id={}", analysis_id)
+        memory.store_diary_entry("council", f"REPORT:{analysis_id}|{json.dumps(report)}")
 
     return analysis_id
+
+
+def list_analyses(limit: int = 10) -> list[dict[str, Any]]:
+    all_items = _load_history()
+    sorted_items = sorted(all_items, key=lambda x: x.get("timestamp", ""), reverse=True)
+    return [
+        {
+            "analysis_id": item["id"],
+            "query": item["query"],
+            "timestamp": item["timestamp"],
+            "agent_count": len(item.get("agent_outputs", [])),
+            "divergence_count": len(item.get("divergence_points", [])),
+            "divergence_status": item.get("divergence_status", "parsed"),
+            "confidence": item.get("confidence_score", 0),
+        }
+        for item in sorted_items[:limit]
+    ]
+
+
+def get_analysis(analysis_id: str) -> dict[str, Any]:
+    for item in _load_history():
+        if item.get("id") == analysis_id:
+            agent_outputs = item.get("agent_outputs", [])
+            ma = next((o for o in agent_outputs if o.get("role") == "market_analyst"), {})
+            da = next((o for o in agent_outputs if o.get("role") == "devils_advocate"), {})
+            return {
+                "analysis_id": analysis_id,
+                "query": item["query"],
+                "timestamp": item["timestamp"],
+                "market_analyst": ma,
+                "devils_advocate": da,
+                "divergence_count": len(item.get("divergence_points", [])),
+                "divergence_status": item.get("divergence_status", "parsed"),
+                "confidence": item.get("confidence_score", 0),
+                "report": item.get("report"),
+            }
+    return {}
 
 
 def recall_agent_context(agent_name: str, query: str | None = None) -> list[dict[str, Any]]:
     memory = _get_memory()
     if query:
         return memory.recall_past_analysis(agent_name, query=query, limit=3)
-    diary = memory.read_recent_diary(agent_name, n_entries=5)
-    return diary
-
-
-def list_analyses(limit: int = 10) -> list[dict[str, Any]]:
-    """Return a list of recent analysis summaries parsed from agent diaries."""
-    memory = _get_memory()
-    analyses: dict[str, dict[str, Any]] = {}
-
-    for agent_name in ["market_analyst", "devils_advocate"]:
-        entries = memory.read_recent_diary(agent_name, n_entries=limit * 2)
-        for entry in entries:
-            text = entry.get("entry", "")
-            if not text.startswith("ANALYSIS:"):
-                continue
-
-            parts = text.split("|")
-            if len(parts) < 4:
-                continue
-
-            analysis_id = parts[0].replace("ANALYSIS:", "")
-            query = parts[1].replace("query:", "")
-            try:
-                divergence_count = int(parts[2].replace("divergences:", ""))
-                confidence = float(parts[3].replace("confidence:", ""))
-            except ValueError:
-                continue
-
-            if analysis_id not in analyses:
-                analyses[analysis_id] = {
-                    "analysis_id": analysis_id,
-                    "query": query,
-                    "timestamp": entry.get("timestamp", ""),
-                    "agent_count": 0,
-                    "divergence_count": divergence_count,
-                    "confidence": confidence,
-                }
-
-            analyses[analysis_id]["agent_count"] += 1
-
-    result = sorted(analyses.values(), key=lambda x: x.get("timestamp", ""), reverse=True)
-    return result[:limit]
-
-
-def get_analysis(analysis_id: str) -> dict[str, Any]:
-    """Return a full analysis by ID, including both agent outputs."""
-    memory = _get_memory()
-
-    ma_outputs = memory.recall_past_analysis("market_analyst", analysis_id=analysis_id)
-    da_outputs = memory.recall_past_analysis("devils_advocate", analysis_id=analysis_id)
-
-    query = ""
-    divergence_count = 0
-    confidence = 0.0
-    timestamp = ""
-
-    for agent_name in ["market_analyst", "devils_advocate"]:
-        entries = memory.read_recent_diary(agent_name, n_entries=1000)
-        for entry in entries:
-            text = entry.get("entry", "")
-            if not text.startswith(f"ANALYSIS:{analysis_id}|"):
-                continue
-            parts = text.split("|")
-            if len(parts) < 4:
-                continue
-            query = parts[1].replace("query:", "")
-            try:
-                divergence_count = int(parts[2].replace("divergences:", ""))
-                confidence = float(parts[3].replace("confidence:", ""))
-                timestamp = entry.get("timestamp", "")
-            except ValueError:
-                continue
-            break
-
-    result: dict[str, Any] = {
-        "analysis_id": analysis_id,
-        "query": query,
-        "timestamp": timestamp,
-        "market_analyst": ma_outputs[0]["content"] if ma_outputs else {},
-        "devils_advocate": da_outputs[0]["content"] if da_outputs else {},
-        "divergence_count": divergence_count,
-        "confidence": confidence,
-    }
-
-    council_entries = memory.read_recent_diary("council", n_entries=1000)
-    import json as _json
-    for entry in council_entries:
-        text = entry.get("entry", "")
-        if text.startswith(f"REPORT:{analysis_id}|"):
-            try:
-                report_data = _json.loads(text.split("|", 1)[1])
-                result.update(report_data)
-            except Exception:
-                pass
-            break
-
-    return result
+    return memory.read_recent_diary(agent_name, n_entries=5)

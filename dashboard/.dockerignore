@@ -1,0 +1,41 @@
+# Frontend build context — exclude everything except the Next.js source.
+
+node_modules/
+.next/
+.turbo/
+out/
+build/
+dist/
+
+# Test artifacts
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun-debug.log*
+
+# Tooling caches
+.cache/
+.eslintcache*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Source-control
+.git/
+.gitignore
+
+# Backend / python — irrelevant to the dashboard
+*.py
+__pycache__/
+*.egg-info/
+
+# Repo-root files we don't need
+README.md
+USAGE.md

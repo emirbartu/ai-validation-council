@@ -6,13 +6,22 @@ export interface KillShot {
   details: string;
 }
 
+export interface CitationCheck {
+  value: string;
+  verified: boolean;
+  source_type: string | null;
+  matched_title: string | null;
+}
+
 export interface AgentOutput {
   role: string;
   content: string;
   kill_shots?: KillShot[];
   verdict?: string;
   citations?: string[];
+  citation_checks?: CitationCheck[];
   confidence?: number;
+  retry_attempted?: boolean;
 }
 
 export interface DivergencePoint {

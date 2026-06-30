@@ -32,7 +32,6 @@ def setup_logging(
         sink: Where to emit logs (default sys.stderr).
     """
     logger.remove()
-
     if json:
         logger.add(
             sink,
@@ -42,6 +41,7 @@ def setup_logging(
             enqueue=True,
         )
     else:
+
         def _fmt(record: dict[str, Any]) -> str:
             trace = record.get("extra", {}).get("trace_id", "")
             exc = record.get("exception", "")

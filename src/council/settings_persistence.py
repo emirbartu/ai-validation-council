@@ -11,9 +11,7 @@ from pathlib import Path
 from council.logging_config import logger
 from council.models.provider_config import AgentProviderConfig, DataProviderConfig
 
-DEFAULT_SETTINGS_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "data" / "settings.json"
-)
+DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "settings.json"
 
 
 def _ensure_dir(path: Path) -> None:

@@ -18,6 +18,7 @@ class CouncilState(TypedDict):
     enabled_sources: list[str]
     agent_outputs: Annotated[list[dict[str, Any]], operator.add]
     divergence_points: list[dict[str, Any]]
+    divergence_status: str | None
     confidence_score: float
     round: int
     error: str | None

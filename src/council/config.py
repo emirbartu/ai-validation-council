@@ -56,9 +56,7 @@ class Settings(BaseSettings):
     enable_crawl4ai: bool = False
 
 
-DEFAULT_SETTINGS_JSON = (
-    Path(__file__).resolve().parent.parent.parent / "data" / "app_settings.json"
-)
+DEFAULT_SETTINGS_JSON = Path(__file__).resolve().parent.parent.parent / "data" / "app_settings.json"
 
 _SECRET_FIELDS = {
     "serper_api_key",

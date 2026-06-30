@@ -1,51 +1,90 @@
-version: "3.9"
+# Infra-only compose for local development.
+#
+# Use: docker compose up -d
+# Brings up Postgres / Redis / Qdrant so the host can run the app via `uv run uvicorn`.
+# All state is persisted in named volumes; data survives `docker compose stop`.
 
 services:
   postgres:
     image: postgres:16-alpine
     container_name: council-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: council
       POSTGRES_PASSWORD: council
       POSTGRES_DB: council
+      # Run faster and quieter; tune via env in production.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U council"]
+      test: ["CMD-SHELL", "pg_isready -U council -d council"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.2"
+          memory: 128M
 
   redis:
     image: redis:7-alpine
     container_name: council-redis
+    restart: unless-stopped
+    # Persist with append-only file (fsync every second). Survives restarts.
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
 
   qdrant:
     image: qdrant/qdrant:v1.17.0
     container_name: council-qdrant
+    restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - qdrantdata:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      # qdrant image has no curl/wget; busybox sh lacks /dev/tcp. Use bash.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
 
 volumes:
-  postgres_data:
-  redis_data:
-  qdrant_data:
+  pgdata:
+  redisdata:
+  qdrantdata:

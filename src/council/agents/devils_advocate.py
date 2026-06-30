@@ -12,6 +12,7 @@ from typing import Any
 
 from council.agents.prompts import build_system_prompt, load_skill_file
 from council.config import get_settings
+from council.debate.citation_verification import verify_citations
 from council.llm.client import get_llm_client
 from council.logging_config import logger
 
@@ -26,10 +27,14 @@ def _enforce_word_limit(text: str, round_num: int, agent_name: str) -> str:
     if len(words) > limit:
         logger.warning(
             "word_limit_exceeded agent={} round={} words={} limit={}",
-            agent_name, round_num, len(words), limit,
+            agent_name,
+            round_num,
+            len(words),
+            limit,
         )
         return " ".join(words[:limit]) + "..."
     return text
+
 
 _URL_RE = re.compile(r"https?://[^\s\)\]\>\"]+", re.IGNORECASE)
 
@@ -162,10 +167,7 @@ def extract_kill_shots(text: str) -> list[dict[str, str]]:
 
     if not sections:
         titles = list(_KILL_SHOT_RE.finditer(text))
-        return [
-            {"number": m.group(1), "title": m.group(2).strip(), "details": ""}
-            for m in titles
-        ]
+        return [{"number": m.group(1), "title": m.group(2).strip(), "details": ""} for m in titles]
 
     kill_shots: list[dict[str, str]] = []
     for i, m in enumerate(sections):
@@ -199,8 +201,13 @@ async def _call_devils_advocate(
     system_prompt: str,
     user_prompt: str,
     append_instruction: str | None = None,
+    temperature: float = 0.7,
 ) -> str:
-    """Call the Devil's Advocate LLM with optional appended instruction."""
+    """Call the Devil's Advocate LLM with optional appended instruction.
+
+    Module 5: retried calls (e.g. after sycophancy detection) drop to
+    ``temperature=0.3`` for more deterministic, harsher output.
+    """
     full_system = system_prompt
     if append_instruction:
         full_system = f"{system_prompt}\n\n{append_instruction}"
@@ -208,7 +215,11 @@ async def _call_devils_advocate(
     client = get_llm_client()
     settings = get_settings()
     model = settings.devils_advocate_model
-    api_key = settings.devils_advocate_api_key.get_secret_value() if settings.devils_advocate_api_key else None
+    api_key = (
+        settings.devils_advocate_api_key.get_secret_value()
+        if settings.devils_advocate_api_key
+        else None
+    )
     base_url = settings.devils_advocate_base_url
 
     if not base_url:
@@ -218,7 +229,7 @@ async def _call_devils_advocate(
         model_key=model,
         system_prompt=full_system,
         user_prompt=user_prompt,
-        temperature=0.7,
+        temperature=temperature,
         api_key_override=api_key if api_key else None,
         base_url_override=base_url,
     )
@@ -289,29 +300,38 @@ async def devils_advocate_node(state: dict[str, Any]) -> dict[str, Any]:
         forbidden_check_passed = False
         retry_attempted = True
         logger.warning(
-            "devils_advocate_forbidden_phrases_detected phrases={}",
+            "devils_advocate_sycophancy_detected phrases={}",
+            detected,
+        )
+        logger.warning(
+            "devils_advocate_retry_attempt=1 reason=sycophancy phrases={}",
             detected,
         )
 
         retry_instruction = (
             "YOUR PREVIOUS RESPONSE WAS REJECTED because it contained forbidden phrases. "
             f"Your role is to find failure modes, not to be encouraging. "
-            f"Rewrite without any of these: {', '.join(detected)}"
+            f"Rewrite without any of these: {', '.join(detected)}. "
+            "Be harsher. Find more structural reasons for failure. "
+            "Do not soften language even in concluding sentences."
         )
 
         try:
             response_text = await _call_devils_advocate(
-                system_prompt, user_prompt, retry_instruction,
+                system_prompt,
+                user_prompt,
+                retry_instruction,
+                temperature=0.3,
             )
         except Exception as exc:
             logger.error(
-                "devils_advocate_retry_llm_error error={} trace_id={}", exc, "",
+                "devils_advocate_retry_llm_error error={} trace_id={}",
+                exc,
+                "",
             )
 
         if response_text:
-            has_forbidden_after_retry, detected_after_retry = (
-                check_forbidden_phrases(response_text)
-            )
+            has_forbidden_after_retry, detected_after_retry = check_forbidden_phrases(response_text)
             if not has_forbidden_after_retry:
                 forbidden_check_passed = True
             else:
@@ -322,7 +342,7 @@ async def devils_advocate_node(state: dict[str, Any]) -> dict[str, Any]:
 
     response_text = _enforce_word_limit(response_text, round_num, "devils_advocate")
 
-    citations = _extract_citations(response_text)
+    _extract_citations(response_text)
     kill_shots = extract_kill_shots(response_text)
     verdict = extract_verdict(response_text)
 
@@ -331,6 +351,15 @@ async def devils_advocate_node(state: dict[str, Any]) -> dict[str, Any]:
             "devils_advocate_insufficient_kill_shots count={} expected=3",
             len(kill_shots),
         )
+
+    raw_citations = _extract_citations(response_text)
+    citation_checks = verify_citations(
+        raw_citations,
+        reddit_posts,
+        hn_stories,
+    )
+
+    verified_citations = [c["value"] for c in citation_checks if c["verified"]]
 
     return {
         "agent_outputs": [
@@ -341,7 +370,8 @@ async def devils_advocate_node(state: dict[str, Any]) -> dict[str, Any]:
                 "verdict": verdict,
                 "forbidden_check_passed": forbidden_check_passed,
                 "retry_attempted": retry_attempted,
-                "citations": citations,
+                "citations": verified_citations,
+                "citation_checks": citation_checks,
                 "confidence": 0.0,
             },
         ],

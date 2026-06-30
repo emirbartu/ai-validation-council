@@ -65,9 +65,7 @@ async def test_pipeline_graceful_degradation_no_api_keys(
 @patch("council.pipeline.store_analysis_results", new_callable=AsyncMock)
 @patch("council.pipeline.RedditCollector")
 @patch("council.pipeline.HNCollector")
-async def test_pipeline_handles_collector_failure(
-    mock_hn, mock_reddit, mock_store, mock_compile
-):
+async def test_pipeline_handles_collector_failure(mock_hn, mock_reddit, mock_store, mock_compile):
     mock_reddit_instance = AsyncMock()
     mock_reddit_instance.collect = AsyncMock(side_effect=Exception("Serper API down"))
     mock_reddit.return_value = mock_reddit_instance

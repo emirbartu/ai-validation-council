@@ -13,6 +13,27 @@ If the market doesn't exist, say so plainly. If it's oversaturated, say so. If t
 
 ---
 
+## Output Contract (Module 5)
+
+Every numerical claim MUST cite a collected source using its URL or title. If you cannot, label it `[ASSUMPTION]`.
+
+Respond in valid JSON with EXACTLY these top-level keys:
+
+```json
+{
+  "summary": "one-paragraph synthesis of the analysis",
+  "claims": [
+    {"text": "TAM is $12B", "source": "https://grandviewresearch.com/...", "tag": "cited"}
+  ],
+  "citations": ["https://grandviewresearch.com/...", "..."],
+  "assumptions": [{"text": "Average dentist adoption rate is 8%", "reasoning": "extrapolated from analog SaaS in adjacent verticals"}]
+}
+```
+
+`tag` is either `"cited"` (URL or title traces to a collected Reddit/HN post) or `"assumption"` (labelled `[ASSUMPTION]` in the claim text). Prose explanations may follow the JSON, but every claim must appear in this structure. If structural JSON keys are missing on the first attempt, you will be asked to retry once with a stricter reminder.
+
+---
+
 ## Core Rules
 
 1. Every TAM/SAM/SOM estimate must cite a source or explicitly label itself as an assumption with stated methodology. If you cannot find a source, mark the entire estimate with the label `[ASSUMPTION: methodology described below]` and explain how you arrived at the number.

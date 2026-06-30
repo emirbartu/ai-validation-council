@@ -1,6 +1,7 @@
 import pytest
 
 from council.debate.confidence import (
+    _count_verified_citations,
     calculate_confidence_score,
     compute_confidence_from_state,
     interpret_score,
@@ -79,3 +80,121 @@ class TestInterpretScore:
 
     def test_unreliable(self):
         assert "Unreliable" in interpret_score(5)
+
+
+class TestCitationCounting:
+    """Module 4: data_quality_factor depends on verified citation count."""
+
+    def test_verified_citations_counted(self):
+        outputs = [
+            {
+                "role": "market_analyst",
+                "citation_checks": [
+                    {"value": "a", "verified": True},
+                    {"value": "b", "verified": False},
+                    {"value": "c", "verified": True},
+                ],
+            }
+        ]
+        assert _count_verified_citations(outputs) == 2
+
+    def test_hallucinated_citations_zero_data_quality(self):
+        """5 hallucinated + 0 verified → no quality bonus from citations."""
+        outputs = [
+            {
+                "role": "market_analyst",
+                "citation_checks": [
+                    {"value": f"https://fake-{i}.com", "verified": False} for i in range(5)
+                ],
+            }
+        ]
+        assert _count_verified_citations(outputs) == 0
+
+    def test_legacy_fallback_when_citation_checks_absent(self):
+        """Pre-Module-1 analyses used the bare ``citations`` list."""
+        outputs = [{"role": "market_analyst", "citations": ["a", "b", "c"]}]
+        assert _count_verified_citations(outputs) == 3
+
+    def test_mixed_agents_citation_sum(self):
+        outputs = [
+            {
+                "role": "market_analyst",
+                "citation_checks": [{"value": "a", "verified": True}],
+            },
+            {
+                "role": "devils_advocate",
+                "citation_checks": [
+                    {"value": "b", "verified": True},
+                    {"value": "c", "verified": False},
+                ],
+            },
+        ]
+        assert _count_verified_citations(outputs) == 2
+
+
+class TestDivergenceSanitization:
+    """Module 4: divergence_count gated on parse status."""
+
+    def test_parse_error_applies_max_penalty(self):
+        """When divergence_status == 'parse_error', divergence is treated as
+        large (max penalty). Score must drop vs. healthy parsed state with
+        zero divergences."""
+        healthy = {
+            "reddit_posts": [],
+            "hn_stories": [],
+            "divergence_points": [],
+            "divergence_status": "parsed",
+        }
+        broken = {
+            "reddit_posts": [],
+            "hn_stories": [],
+            "divergence_points": [],
+            "divergence_status": "parse_error",
+        }
+        assert compute_confidence_from_state(broken) < compute_confidence_from_state(healthy)
+
+    def test_parsed_no_divergence_positive_quality(self):
+        """3 verified citations + 0 divergence → positive score contribution."""
+        state = {
+            "reddit_posts": [],
+            "hn_stories": [],
+            "divergence_points": [],
+            "divergence_status": "parsed",
+            "agent_outputs": [
+                {
+                    "role": "market_analyst",
+                    "citation_checks": [
+                        {"value": f"https://verified-{i}.com", "verified": True} for i in range(3)
+                    ],
+                }
+            ],
+        }
+        score_with_citations = compute_confidence_from_state(state)
+        baseline_score = compute_confidence_from_state({**state, "agent_outputs": []})
+        assert score_with_citations > baseline_score
+
+    def test_parse_error_flagged_in_logs(self):
+        import json
+
+        from council.logging_config import logger
+
+        captured: list[str] = []
+
+        def sink(message: str) -> None:
+            record = json.loads(message)
+            captured.append(record["record"]["message"])
+
+        handler_id = logger.add(sink, level="WARNING", serialize=True)
+        try:
+            state = {
+                "reddit_posts": [],
+                "hn_stories": [],
+                "divergence_points": [],
+                "divergence_status": "parse_error",
+            }
+            compute_confidence_from_state(state)
+        finally:
+            logger.remove(handler_id)
+
+        joined = " ".join(captured)
+        assert "divergence_status_parse_error" in joined

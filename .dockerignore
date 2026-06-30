@@ -1,0 +1,52 @@
+# Build context — keep small.
+# .venv alone is ~3GB after torch/sentence-transformers install.
+
+# Local environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local data (persistent volume mounted at runtime, not needed at build)
+data/
+.history/
+
+# Tooling caches
+.cache/
+.mypy_cache/
+.benchmarks/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docs and CI
+*.md
+!README.md
+docs/
+.github/
+tests/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*.log
+
+# Dashboard — not used by backend build
+dashboard/

@@ -57,5 +57,7 @@ class TestCouncilAddendum:
         assert report.addendum is None
 
     def test_populated(self):
-        a = CouncilAddendum(topic="Hidden risk", insight="Something new", raised_by="devils_advocate")
+        a = CouncilAddendum(
+            topic="Hidden risk", insight="Something new", raised_by="devils_advocate"
+        )
         assert a.raised_by == "devils_advocate"

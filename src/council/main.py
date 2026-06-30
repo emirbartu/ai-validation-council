@@ -35,8 +35,10 @@ async def check_db_health() -> bool:
     if async_engine is None or settings.database_url is None:
         return False
     try:
+        from sqlalchemy import text
+
         async with async_engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         return True
     except Exception:
         return False
@@ -175,10 +177,15 @@ async def api_analyze(req: AnalyzeRequest):
         "query": req.idea,
         "report": report,
         "agent_outputs": [
-            {"role": o.get("role", "?"), "content": o.get("content", ""), "kill_shots": o.get("kill_shots", [])}
+            {
+                "role": o.get("role", "?"),
+                "content": o.get("content", ""),
+                "kill_shots": o.get("kill_shots", []),
+            }
             for o in result.get("agent_outputs", [])
         ],
         "divergence_points": result.get("divergence_points", []),
+        "divergence_status": result.get("divergence_status", "parsed"),
         "confidence_score": result.get("confidence_score", 0),
         "rounds": result.get("round", 0),
     }

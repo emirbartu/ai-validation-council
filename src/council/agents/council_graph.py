@@ -23,7 +23,9 @@ PROFILE_ROUNDS = {
 }
 
 
-def _compute_agreement_ratio(agent_outputs: list[dict[str, Any]], divergence_points: list[dict[str, Any]]) -> float:
+def _compute_agreement_ratio(
+    agent_outputs: list[dict[str, Any]], divergence_points: list[dict[str, Any]]
+) -> float:
     if not divergence_points:
         return 0.0
     resolved = 0
@@ -95,13 +97,23 @@ async def _debate_analysis(state: CouncilState) -> dict[str, Any]:
     current_round = state.get("round", 0)
     logger.info("round_{}_analysis agent_count={}", current_round, len(agent_outputs))
 
-    divergence_points = await detect_divergence(agent_outputs)
+    envelope = await detect_divergence(agent_outputs)
+    divergence_status = envelope.get("status", "parsed")
+    divergence_points = envelope.get("divergences", []) if divergence_status == "parsed" else []
+
+    logger.info(
+        "divergence_status status={} count={}",
+        divergence_status,
+        len(divergence_points),
+    )
+
     confidence_score = compute_confidence_from_state(
         {
             "query": state.get("query", ""),
             "reddit_posts": state.get("reddit_posts", []),
             "hn_stories": state.get("hn_stories", []),
             "divergence_points": divergence_points,
+            "divergence_status": divergence_status,
             "chunk_count": state.get("chunk_count", 0),
             "round": current_round,
             "agent_outputs": agent_outputs,
@@ -136,9 +148,11 @@ async def _debate_analysis(state: CouncilState) -> dict[str, Any]:
 
     report_dict = report.model_dump()
     report_dict["counterfactual_triggered"] = counterfactual_triggered
+    report_dict["divergence_status"] = divergence_status
 
     return {
         "divergence_points": divergence_points,
+        "divergence_status": divergence_status,
         "confidence_score": confidence_score,
         "round": new_round,
         "report": report_dict,

@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 from council.agents.prompts import build_system_prompt, load_skill_file
 from council.config import get_settings
+from council.debate.citation_verification import verify_citations
 from council.llm.client import get_llm_client
 from council.logging_config import get_trace_id, logger
 
 _URL_RE = re.compile(r"https?://[^\s\)\]\>\"]+", re.IGNORECASE)
 
 _WORD_LIMITS = {0: 400, 1: 300, 2: 150}
+
+_MAX_RETRIES = 1
+
+_STRICT_RETRY_INSTRUCTION = (
+    "Your previous response was structurally invalid. You MUST now respond with "
+    "valid JSON containing EXACTLY these top-level keys: "
+    '"summary", "claims", "citations", "assumptions". '
+    "Every numerical claim must cite a collected source URL/title or be labelled "
+    '"[ASSUMPTION]". No prose outside the JSON. No markdown fences. '
+    "Respond now with the JSON object only."
+)
 
 
 def _enforce_word_limit(text: str, round_num: int, agent_name: str) -> str:
@@ -21,7 +34,10 @@ def _enforce_word_limit(text: str, round_num: int, agent_name: str) -> str:
     if len(words) > limit:
         logger.warning(
             "word_limit_exceeded agent={} round={} words={} limit={}",
-            agent_name, round_num, len(words), limit,
+            agent_name,
+            round_num,
+            len(words),
+            limit,
         )
         return " ".join(words[:limit]) + "..."
     return text
@@ -50,6 +66,61 @@ def _to_dict(obj: Any) -> dict[str, Any]:
     return {}
 
 
+def _is_structurally_valid_json(text: str) -> bool:
+    """Return True iff ``text`` parses as a JSON object with the required keys.
+
+    Required keys (Module 5 spec): ``summary``, ``claims``, ``citations``, ``assumptions``.
+    Plain-prose responses that happen to contain a citation are not sufficient —
+    the analyst output must be machine-parseable so it can be verified.
+    """
+    if not text:
+        return False
+    json_match = _extract_json_object(text)
+    if not json_match:
+        return False
+    try:
+        data = json.loads(json_match)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    required = {"summary", "claims", "citations", "assumptions"}
+    return required.issubset(data.keys())
+
+
+def _extract_json_object(text: str) -> str | None:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return None
+
+
+async def _call_market_analyst(
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.7,
+) -> str:
+    client = get_llm_client()
+    settings = get_settings()
+    model = settings.market_analyst_model
+    api_key = (
+        settings.market_analyst_api_key.get_secret_value()
+        if settings.market_analyst_api_key
+        else None
+    )
+    base_url = settings.market_analyst_base_url or ""
+
+    return await client.achat(
+        model_key=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        api_key_override=api_key if api_key else None,
+        base_url_override=base_url,
+    )
+
+
 async def market_analyst_node(state: dict[str, Any]) -> dict[str, Any]:
     """LangGraph node: run the Market Analyst agent.
 
@@ -59,6 +130,10 @@ async def market_analyst_node(state: dict[str, Any]) -> dict[str, Any]:
     - ``hn_stories`` (list): collected Hacker News stories.
 
     Returns a dict with an ``agent_outputs`` list.
+
+    Module 5 contract: if the LLM response fails structural JSON validation,
+    retry once at temperature=0.3 with a strict prompt reminder. Logs
+    ``retry_attempt=1`` in that case.
     """
     query = state.get("query", "")
     reddit_posts = [_to_dict(p) for p in state.get("reddit_posts", [])]
@@ -94,24 +169,9 @@ async def market_analyst_node(state: dict[str, Any]) -> dict[str, Any]:
     )
     system_prompt = system_prompt + word_limit_note
 
+    retry_attempted = False
     try:
-        client = get_llm_client()
-        settings = get_settings()
-        model = settings.market_analyst_model
-        api_key = settings.market_analyst_api_key.get_secret_value() if settings.market_analyst_api_key else None
-        base_url = settings.market_analyst_base_url
-
-        if not base_url:
-            base_url = ""
-
-        response_text = await client.achat(
-            model_key=model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=0.7,
-            api_key_override=api_key if api_key else None,
-            base_url_override=base_url,
-        )
+        response_text = await _call_market_analyst(system_prompt, user_prompt)
     except Exception as exc:
         logger.error(
             "market_analyst_llm_error error={} trace_id={}",
@@ -125,15 +185,49 @@ async def market_analyst_node(state: dict[str, Any]) -> dict[str, Any]:
         return {"agent_outputs": []}
 
     response_text = _enforce_word_limit(response_text, round_num, "market_analyst")
-    citations = _extract_citations(response_text)
+
+    if not _is_structurally_valid_json(response_text):
+        logger.warning(
+            "market_analyst_invalid_json retry_attempt=1 round={} preview={}",
+            round_num,
+            response_text[:200],
+        )
+        retry_attempted = True
+        try:
+            retry_text = await _call_market_analyst(
+                system_prompt + "\n\n" + _STRICT_RETRY_INSTRUCTION,
+                user_prompt,
+                temperature=0.3,
+            )
+        except Exception as exc:
+            logger.error(
+                "market_analyst_retry_llm_error error={} trace_id={}",
+                exc,
+                get_trace_id(),
+            )
+            retry_text = ""
+
+        if retry_text and _is_structurally_valid_json(retry_text):
+            response_text = retry_text
+
+    raw_citations = _extract_citations(response_text)
+    citation_checks = verify_citations(
+        raw_citations,
+        reddit_posts,
+        hn_stories,
+    )
+
+    verified_citations = [c["value"] for c in citation_checks if c["verified"]]
 
     return {
         "agent_outputs": [
             {
                 "role": "market_analyst",
                 "content": response_text,
-                "citations": citations,
+                "citations": verified_citations,
+                "citation_checks": citation_checks,
                 "confidence": 0.0,
+                "retry_attempted": retry_attempted,
             },
         ],
     }

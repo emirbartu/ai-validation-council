@@ -66,6 +66,7 @@ async def run_analysis(query: str, profile: str = "full") -> dict[str, Any]:
         "enabled_sources": enabled_sources,
         "agent_outputs": [],
         "divergence_points": [],
+        "divergence_status": None,
         "confidence_score": 0.0,
         "round": 0,
         "error": None,
@@ -81,6 +82,7 @@ async def run_analysis(query: str, profile: str = "full") -> dict[str, Any]:
         query=query,
         agent_outputs=result.get("agent_outputs", []),
         divergence_points=result.get("divergence_points", []),
+        divergence_status=result.get("divergence_status", "parsed"),
         confidence_score=result.get("confidence_score", 0.0),
         report=result.get("report", {}),
     )

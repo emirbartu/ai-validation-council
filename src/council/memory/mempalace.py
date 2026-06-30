@@ -10,6 +10,7 @@ import datetime
 import json
 import threading
 import uuid
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -32,12 +33,54 @@ class CouncilMemoryManager:
         "devils_advocate": "council_devils_advocate",
     }
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
+    def __init__(
+        self,
+        model_name: str = "all-MiniLM-L6-v2",
+        storage_path: str | None = None,
+    ) -> None:
         self._model: SentenceTransformer = SentenceTransformer(model_name)
         self._embedding_dim: int = self._model.get_embedding_dimension()
         self._lock = threading.Lock()
         self._palace: dict[str, dict[str, list[dict[str, Any]]]] = {}
         self._diaries: dict[str, list[dict[str, Any]]] = {}
+        self._storage_path: str | None = storage_path
+        if storage_path:
+            self._load_from_disk()
+
+    def _load_from_disk(self) -> None:
+        """Populate in-memory state from a JSON file if it exists.
+
+        Embeddings are recomputed on demand; the persisted payload omits
+        ``embedding`` vectors (they're deterministic for a given model).
+        """
+        if not self._storage_path:
+            return
+        path = Path(self._storage_path)
+        if not path.exists():
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+        with self._lock:
+            self._palace = payload.get("palace", {})
+            self._diaries = payload.get("diaries", {})
+
+    def _persist_to_disk(self) -> None:
+        """Snapshot ``palace`` + ``diaries`` to ``storage_path`` if set."""
+        if not self._storage_path:
+            return
+        path = Path(self._storage_path)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"palace": self._palace, "diaries": self._diaries}
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, default=str)
+            tmp.replace(path)
+        except OSError:
+            return
 
     def ensure_wings(self) -> None:
         # TODO Phase 4: Swap to MCP mempalace_list_wings + create missing wings
@@ -78,6 +121,7 @@ class CouncilMemoryManager:
                 }
             )
 
+        self._persist_to_disk()
         return drawer_id
 
     def recall_past_analysis(
@@ -148,6 +192,7 @@ class CouncilMemoryManager:
                     "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 }
             )
+        self._persist_to_disk()
 
     def read_recent_diary(
         self,

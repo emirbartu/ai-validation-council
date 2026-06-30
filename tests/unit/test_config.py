@@ -1,6 +1,5 @@
 """Test config validation and settings loading."""
 
-
 from council.config import Settings
 
 

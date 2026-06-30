@@ -1,62 +1,140 @@
-version: "3.8"
+# Full stack: backend + dashboard + Postgres + Redis + Qdrant.
+#
+# Use (rebuild images from scratch):
+#   docker compose -f docker-compose.full.yml up --build
+#
+# Hot-reload dev mode (host port forwards, override build args):
+#   docker compose -f docker-compose.full.yml -f docker-compose.override.yml up --build
+#
+# Inside this compose network, services reach each other by SERVICE NAME
+# (e.g. `postgres`, `redis`, `qdrant`, `backend`). The .env file on the host
+# uses `localhost` because the host runs the app outside Docker in dev —
+# but inside this compose file we OVERRIDE those URLs to the service names.
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: council-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: council
+      POSTGRES_PASSWORD: council
+      POSTGRES_DB: council
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U council -d council"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+        reservations: { cpus: "0.2", memory: 128M }
+
+  redis:
+    image: redis:7-alpine
+    container_name: council-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 64M }
+
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: council-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrantdata:/qdrant/storage
+    healthcheck:
+      # bash because qdrant's /bin/sh is busybox and lacks /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e 'GET /healthz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+        reservations: { cpus: "0.5", memory: 512M }
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+      args:
+        INSTALL_PLAYWRIGHT: "0"
+    image: council-backend:latest
+    container_name: council-backend
+    restart: unless-stopped
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://council:council@postgres:5432/council
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - backend_data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       qdrant:
-        condition: service_started
-    restart: unless-stopped
+        condition: service_healthy
+    # Backend is NOT exposed on host by default — only the dashboard needs to
+    # reach it. Override with docker-compose.override.yml for host access.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); sys.exit(0 if r.status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2G }
+        reservations: { cpus: "0.5", memory: 512M }
 
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
+      args:
+        # Next.js bakes NEXT_PUBLIC_API_URL into the JS bundle at build time.
+        # Browser requests go through the user's host, so they need a URL
+        # the browser can reach. docker-compose.override.yml rewrites this
+        # to http://localhost:8000 for dev. For pure docker-stack usage, set
+        # NEXT_PUBLIC_API_URL to your public backend URL via .env or override.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: council-dashboard:latest
+    container_name: council-dashboard
+    restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
     depends_on:
-      - backend
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: council
-      POSTGRES_PASSWORD: council
-      POSTGRES_DB: council
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U council"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-  qdrant:
-    image: qdrant/qdrant:v1.17.0
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+        reservations: { cpus: "0.1", memory: 128M }
 
 volumes:
   pgdata:
-  qdrant_data:
+  redisdata:
+  qdrantdata:
+  backend_data:

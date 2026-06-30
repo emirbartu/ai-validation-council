@@ -83,7 +83,9 @@ class RedditCollector(BaseCollector[RedditPost]):
 
     async def collect(self, query: str, max_results: int = 20) -> list[RedditPost]:
         api_key = settings.serper_api_key
-        if api_key is None or (hasattr(api_key, 'get_secret_value') and not api_key.get_secret_value()):
+        if api_key is None or (
+            hasattr(api_key, "get_secret_value") and not api_key.get_secret_value()
+        ):
             logger.warning("SERPER_API_KEY is not configured, skipping Reddit collection")
             return []
 

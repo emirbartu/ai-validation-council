@@ -94,7 +94,17 @@ def compute_confidence_from_state(state: dict[str, Any]) -> float:
     chunk_count = state.get("chunk_count", 0)
     if chunk_count > 0:
         data_volume = chunk_count
+
+    divergence_status = state.get("divergence_status") or "parsed"
     divergence_count = len(state.get("divergence_points", []))
+    if divergence_status == "parse_error":
+        # Divergence unknown — conservatively assume maximum disagreement so
+        # analysts don't gain confidence from a hidden LLM parse failure.
+        divergence_count = 10
+        logger.warning(
+            "divergence_status_parse_error applying_max_penalty divergence_count=10",
+        )
+
     source_diversity = _count_sources(state)
     recency_score = _compute_recency(
         state.get("reddit_posts", []),
@@ -123,9 +133,9 @@ def compute_confidence_from_state(state: dict[str, Any]) -> float:
     # Cache current divergence for next round
     _prev_divergence_by_query[query] = divergence_count
 
-    # Count citations across all agent outputs
+    # Count citations across all agent outputs (only verified ones).
     agent_outputs = state.get("agent_outputs", [])
-    citations_count = sum(len(o.get("citations", [])) for o in agent_outputs)
+    citations_count = _count_verified_citations(agent_outputs)
 
     score = calculate_confidence_score_v2(
         data_volume=data_volume,
@@ -165,6 +175,25 @@ def _count_sources(state: dict[str, Any]) -> int:
     if state.get("crawl_results"):
         count += 1
     return min(count, 5)
+
+
+def _count_verified_citations(agent_outputs: list[dict[str, Any]]) -> int:
+    """Sum verified citations across all agent outputs.
+
+    Prefers the ``citation_checks`` field (Module 1 contract). Falls back to
+    ``len(o.get("citations", []))`` for legacy analyses that pre-date the
+    verification layer.
+    """
+    total = 0
+    for output in agent_outputs:
+        checks = output.get("citation_checks")
+        if isinstance(checks, list):
+            total += sum(1 for c in checks if c.get("verified"))
+        else:
+            legacy = output.get("citations", [])
+            if isinstance(legacy, list):
+                total += len(legacy)
+    return total
 
 
 def _compute_recency(

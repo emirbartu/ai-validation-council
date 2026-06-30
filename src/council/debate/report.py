@@ -87,8 +87,14 @@ async def _extract_structured_data(agent_outputs: list[dict[str, Any]]) -> dict[
         return json.loads(content)
     except Exception as exc:
         logger.warning("report_extraction_failed error={}", str(exc)[:200])
-        return {"risks": [], "critical_assumptions": [], "validation_experiments": [],
-                "debate_summary": {}, "swot": {}, "addendum": None}
+        return {
+            "risks": [],
+            "critical_assumptions": [],
+            "validation_experiments": [],
+            "debate_summary": {},
+            "swot": {},
+            "addendum": None,
+        }
 
 
 def _map_divergence_points(

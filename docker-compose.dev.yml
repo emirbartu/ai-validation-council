@@ -1,0 +1,20 @@
+# Optional dev override. Copies the full stack onto the host's localhost
+# ports so a developer can hit `http://localhost:8000` and `http://localhost:3000`
+# directly.
+#
+# Use:  docker compose -f docker-compose.full.yml -f docker-compose.override.yml up --build
+#
+# Excluded from production deployment paths because it adds insecure host
+# port forwards.
+
+services:
+  backend:
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    ports:
+      - "3000:3000"
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
