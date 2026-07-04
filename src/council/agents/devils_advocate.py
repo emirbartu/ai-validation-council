@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 from council.agents.prompts import build_system_prompt, load_skill_file
-from council.config import get_settings
+from council.config import LLMRole, resolve_llm_config
 from council.debate.citation_verification import verify_citations
 from council.llm.client import get_llm_client
 from council.logging_config import logger
@@ -213,25 +213,14 @@ async def _call_devils_advocate(
         full_system = f"{system_prompt}\n\n{append_instruction}"
 
     client = get_llm_client()
-    settings = get_settings()
-    model = settings.devils_advocate_model
-    api_key = (
-        settings.devils_advocate_api_key.get_secret_value()
-        if settings.devils_advocate_api_key
-        else None
-    )
-    base_url = settings.devils_advocate_base_url
-
-    if not base_url:
-        base_url = ""
-
+    resolved = resolve_llm_config(LLMRole.DEVILS_ADVOCATE)
     return await client.achat(
-        model_key=model,
+        model_key=resolved.model,
         system_prompt=full_system,
         user_prompt=user_prompt,
         temperature=temperature,
-        api_key_override=api_key if api_key else None,
-        base_url_override=base_url,
+        api_key_override=resolved.api_key,
+        base_url_override=resolved.base_url,
     )
 
 

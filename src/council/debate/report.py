@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from council.config import get_settings
+from council.config import LLMRole, resolve_llm_config
 from council.debate.confidence import interpret_score
 from council.llm.client import get_llm_client
 from council.logging_config import logger
@@ -58,23 +58,16 @@ STRICT RULES:
 
 async def _extract_structured_data(agent_outputs: list[dict[str, Any]]) -> dict[str, Any]:
     client = get_llm_client()
-    settings = get_settings()
-    model = settings.report_model
-    api_key = settings.report_api_key.get_secret_value() if settings.report_api_key else None
-    base_url = settings.report_base_url
-
-    if not base_url:
-        base_url = ""
-
+    resolved = resolve_llm_config(LLMRole.REPORT)
     try:
         prompt = _EXTRACTION_PROMPT.format(agent_outputs=json.dumps(agent_outputs, indent=2))
         response = await client.achat(
-            model_key=model,
+            model_key=resolved.model,
             system_prompt="You extract structured data from unstructured text. Output valid JSON only.",
             user_prompt=prompt,
             temperature=0.1,
-            api_key_override=api_key if api_key else None,
-            base_url_override=base_url,
+            api_key_override=resolved.api_key,
+            base_url_override=resolved.base_url,
         )
         content = response.strip()
         if content.startswith("```json"):

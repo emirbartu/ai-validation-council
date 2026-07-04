@@ -169,9 +169,23 @@ class SettingsUpdate(BaseModel):
 
 @app.post("/api/analyze")
 async def api_analyze(req: AnalyzeRequest):
+    from council.config import MissingLLMConfigError
     from council.pipeline import run_analysis
 
-    result = await run_analysis(req.idea, profile=req.profile)
+    try:
+        result = await run_analysis(req.idea, profile=req.profile)
+    except MissingLLMConfigError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "missing_llm_config",
+                "message": str(exc),
+                "fix": "Open the Settings page and configure the model "
+                "name and API key for each agent, or set LLM_API_KEY "
+                "in .env.",
+            },
+        ) from exc
+
     report = result.get("report") or {}
     return {
         "query": req.idea,

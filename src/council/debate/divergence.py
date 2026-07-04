@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from council.config import get_settings
+from council.config import LLMRole, resolve_llm_config
 from council.llm.client import get_llm_client
 from council.logging_config import logger
 
@@ -87,23 +87,14 @@ async def detect_divergence(agent_outputs: list[dict[str, Any]]) -> DivergenceEn
 
     try:
         client = get_llm_client()
-        settings = get_settings()
-        model = settings.divergence_model
-        api_key = (
-            settings.divergence_api_key.get_secret_value() if settings.divergence_api_key else None
-        )
-        base_url = settings.divergence_base_url
-
-        if not base_url:
-            base_url = ""
-
+        resolved = resolve_llm_config(LLMRole.DIVERGENCE)
         response = await client.achat(
-            model_key=model,
+            model_key=resolved.model,
             system_prompt=_DIVERGENCE_SYSTEM_PROMPT,
             user_prompt=outputs_text,
             temperature=0.3,
-            api_key_override=api_key if api_key else None,
-            base_url_override=base_url,
+            api_key_override=resolved.api_key,
+            base_url_override=resolved.base_url,
         )
     except Exception as exc:
         logger.error("divergence_llm_error error={}", exc)

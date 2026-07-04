@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from council.agents.prompts import build_system_prompt, load_skill_file
-from council.config import get_settings
+from council.config import LLMRole, resolve_llm_config
 from council.debate.citation_verification import verify_citations
 from council.llm.client import get_llm_client
 from council.logging_config import get_trace_id, logger
@@ -102,22 +102,14 @@ async def _call_market_analyst(
     temperature: float = 0.7,
 ) -> str:
     client = get_llm_client()
-    settings = get_settings()
-    model = settings.market_analyst_model
-    api_key = (
-        settings.market_analyst_api_key.get_secret_value()
-        if settings.market_analyst_api_key
-        else None
-    )
-    base_url = settings.market_analyst_base_url or ""
-
+    resolved = resolve_llm_config(LLMRole.MARKET_ANALYST)
     return await client.achat(
-        model_key=model,
+        model_key=resolved.model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=temperature,
-        api_key_override=api_key if api_key else None,
-        base_url_override=base_url,
+        api_key_override=resolved.api_key,
+        base_url_override=resolved.base_url,
     )
 
 

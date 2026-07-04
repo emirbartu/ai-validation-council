@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,52 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from council.logging_config import logger
 from council.models.provider_config import AgentProviderConfig, DataProviderConfig
+
+
+class LLMRole(StrEnum):
+    MARKET_ANALYST = "market_analyst"
+    DEVILS_ADVOCATE = "devils_advocate"
+    DIVERGENCE = "divergence"
+    REPORT = "report"
+
+
+class MissingLLMConfigError(RuntimeError):
+    """Raised when an agent role has no usable model + key + base_url combo."""
+
+
+@dataclass(frozen=True)
+class ResolvedLLMConfig:
+    """Concrete (model, base_url, api_key) tuple for an LLM call.
+
+    Returned by ``resolve_llm_config``. All three fields are guaranteed
+    non-empty when this object is constructed; callers may pass them
+    straight to the LLM client without further checks.
+    """
+
+    role: LLMRole
+    model: str
+    base_url: str
+    api_key: str
+
+    def is_complete(self) -> bool:
+        return bool(self.model) and bool(self.base_url) and bool(self.api_key)
+
+# Default base URL when no per-agent value is configured.
+# OpenRouter is the most common provider observed in production logs.
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _secret_value(secret: SecretStr | str | None) -> str:
+    if secret is None:
+        return ""
+    if isinstance(secret, SecretStr):
+        try:
+            return secret.get_secret_value()
+        except Exception:
+            return ""
+    if isinstance(secret, str):
+        return secret
+    return str(secret)
 
 
 class Settings(BaseSettings):
@@ -85,6 +133,130 @@ SAFE_PERSIST_FIELDS = {
     "enable_crawl4ai",
     "log_level",
 }
+
+# Per-role attribute mapping. Used by ``resolve_llm_config`` to read the
+# matching settings fields. Order does not matter; the resolver handles
+# fallbacks.
+_ROLE_ATTRS: dict[LLMRole, dict[str, str]] = {
+    LLMRole.MARKET_ANALYST: {
+        "model": "market_analyst_model",
+        "base_url": "market_analyst_base_url",
+        "api_key": "market_analyst_api_key",
+    },
+    LLMRole.DEVILS_ADVOCATE: {
+        "model": "devils_advocate_model",
+        "base_url": "devils_advocate_base_url",
+        "api_key": "devils_advocate_api_key",
+    },
+    LLMRole.DIVERGENCE: {
+        "model": "divergence_model",
+        "base_url": "divergence_base_url",
+        "api_key": "divergence_api_key",
+    },
+    LLMRole.REPORT: {
+        "model": "report_model",
+        "base_url": "report_base_url",
+        "api_key": "report_api_key",
+    },
+}
+
+# Fallback chain (in order) for `model` when the per-role value is empty.
+# Devil's Advocate first because it's a deterministic, structurally
+# validated agent that's always required.
+_MODEL_FALLBACK_CHAIN: tuple[LLMRole, ...] = (
+    LLMRole.DEVILS_ADVOCATE,
+    LLMRole.MARKET_ANALYST,
+    LLMRole.DIVERGENCE,
+    LLMRole.REPORT,
+)
+
+
+def _read_role_value(role: LLMRole, kind: str, s: Settings) -> str:
+    attr = _ROLE_ATTRS[role].get(kind)
+    if attr is None:
+        return ""
+    raw = getattr(s, attr, None)
+    if raw is None:
+        return ""
+    if isinstance(raw, SecretStr):
+        return _secret_value(raw)
+    if isinstance(raw, str):
+        return raw.strip()
+    return str(raw).strip()
+
+
+def resolve_llm_config(role: LLMRole | str) -> ResolvedLLMConfig:
+    """Resolve the effective ``(model, base_url, api_key)`` for a role.
+
+    Priority for each field (highest first):
+
+    1. Per-role value from settings (set via dashboard or ``.env``).
+    2. Global ``LLM_API_KEY`` for ``api_key`` only.
+    3. ``DEFAULT_BASE_URL`` for ``base_url`` only.
+    4. Per-role model falls back to other roles' models in the chain
+       (Devil's Advocate → Market Analyst → Divergence → Report).
+
+    Raises ``MissingLLMConfigError`` if no model + api_key combination can
+    be resolved. The returned object is always complete — empty values
+    never escape this function.
+
+    Always consults ``get_settings_manager()`` first so JSON-stored
+    settings (set via the dashboard) are visible — module-level
+    ``settings`` only sees ``.env`` until the manager loads JSON.
+    """
+    if isinstance(role, str):
+        role = LLMRole(role)
+
+    # Force manager construction (loads JSON on first call).
+    s = get_settings_manager()._settings
+
+    model = _read_role_value(role, "model", s)
+    base_url = _read_role_value(role, "base_url", s)
+    api_key = _read_role_value(role, "api_key", s)
+
+    if not api_key:
+        api_key = _secret_value(s.llm_api_key)
+
+    if not model:
+        for fallback_role in _MODEL_FALLBACK_CHAIN:
+            if fallback_role == role:
+                continue
+            fallback_model = _read_role_value(fallback_role, "model", s)
+            if fallback_model:
+                model = fallback_model
+                logger.warning(
+                    "llm_config_model_fallback role={} using={}",
+                    role.value,
+                    fallback_role.value,
+                )
+                break
+
+    if not base_url:
+        base_url = DEFAULT_BASE_URL
+        logger.warning(
+            "llm_config_base_url_defaulted role={} base_url={}",
+            role.value,
+            base_url,
+        )
+
+    if not api_key:
+        raise MissingLLMConfigError(
+            f"No API key configured for {role.value}. "
+            "Set it on the Settings page (per-agent) or set LLM_API_KEY in .env.",
+        )
+    if not model:
+        raise MissingLLMConfigError(
+            f"No model configured for {role.value} (and no fallback model "
+            "from other agents). Set a model on the Settings page or in .env.",
+        )
+
+    return ResolvedLLMConfig(
+        role=role,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+    )
+
 
 settings = Settings()
 

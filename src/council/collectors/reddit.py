@@ -109,14 +109,24 @@ class RedditCollector(BaseCollector[RedditPost]):
                 response.raise_for_status()
                 break
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 429 and attempt < self._max_retries:
+                code = exc.response.status_code
+                if code == 429 and attempt < self._max_retries:
                     logger.warning(
                         f"Serper API rate limited (429), waiting 1s before retry "
                         f"(attempt {attempt}/{self._max_retries})",
                     )
                     await asyncio.sleep(1.0)
                     continue
-                logger.error(f"Serper API request failed: {exc}")
+                if code in (401, 403, 402):
+                    logger.error(
+                        "serper_auth_error code={} hint={}",
+                        code,
+                        "Your SERPER_API_KEY is invalid, expired, or out of "
+                        "credits. Get a fresh key at https://serper.dev and "
+                        "update .env. Skipping Reddit collection for this run.",
+                    )
+                else:
+                    logger.error(f"Serper API request failed: {exc}")
                 return []
             except httpx.HTTPError as exc:
                 logger.error(f"HTTP error contacting Serper API: {exc}")
