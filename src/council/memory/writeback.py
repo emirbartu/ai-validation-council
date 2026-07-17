@@ -1,4 +1,4 @@
-"""MemPalace write-back module for persisting agent analyses."""
+"""JSONL write-back module for persisting agent analyses."""
 
 from __future__ import annotations
 
@@ -9,26 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from council.logging_config import logger
-from council.memory.mempalace import CouncilMemoryManager
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.jsonl"
-
-_memory_manager: CouncilMemoryManager | None = None
-
-
-def _get_memory() -> CouncilMemoryManager:
-    global _memory_manager
-    if _memory_manager is None:
-        from council.config import get_settings
-
-        settings = get_settings()
-        _memory_manager = CouncilMemoryManager(
-            storage_path=settings.mempalace_path,
-        )
-        _memory_manager.ensure_wings()
-    return _memory_manager
 
 
 def _append_history(record: dict[str, Any]) -> None:
@@ -72,21 +56,6 @@ async def store_analysis_results(
         divergence_status,
     )
 
-    memory = _get_memory()
-    for output in agent_outputs:
-        role = output.get("role", "unknown")
-        memory.store_agent_output(role, analysis_id, output)
-
-    for agent_name in ["market_analyst", "devils_advocate"]:
-        memory.store_diary_entry(
-            agent_name,
-            f"ANALYSIS:{analysis_id}|query:{query[:80]}|"
-            f"divergences:{len(divergence_points)}|confidence:{confidence_score}",
-        )
-
-    if report:
-        memory.store_diary_entry("council", f"REPORT:{analysis_id}|{json.dumps(report)}")
-
     return analysis_id
 
 
@@ -125,10 +94,3 @@ def get_analysis(analysis_id: str) -> dict[str, Any]:
                 "report": item.get("report"),
             }
     return {}
-
-
-def recall_agent_context(agent_name: str, query: str | None = None) -> list[dict[str, Any]]:
-    memory = _get_memory()
-    if query:
-        return memory.recall_past_analysis(agent_name, query=query, limit=3)
-    return memory.read_recent_diary(agent_name, n_entries=5)

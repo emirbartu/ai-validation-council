@@ -1,7 +1,7 @@
 """End-to-end analysis pipeline orchestrator.
 
 Wires together data collection → Qdrant ingestion → LLM council → debate
-→ confidence score → MemPalace write-back → formatted output.
+→ confidence score → JSONL write-back → formatted output.
 """
 
 from __future__ import annotations

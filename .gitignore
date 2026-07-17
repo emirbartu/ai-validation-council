@@ -41,9 +41,6 @@ logs/
 # Alembic
 alembic/versions/*.pyc
 
-# MemPalace
-.mempalace/
-
 # Workspace
 workspace/
 .council_workspace/
@@ -67,3 +64,4 @@ dashboard/node_modules/
 
 # Bun
 bun.lockb
+TODOS.md

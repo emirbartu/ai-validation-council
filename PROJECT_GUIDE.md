@@ -38,8 +38,7 @@ Multi-agent Python 3.12 + FastAPI + LangGraph backend, Next.js 16 + Bun frontend
 ├─ debate/ ─────────► divergence detector (LLM, status envelope) + confidence v2 (sigmoid)
 │                     + citation_verification (Module 1)
 │
-└─ memory/ ──────────► MemPalace (RAM + JSON snapshot via MEMPALACE_PATH, MCP-swap = Phase 4)
-                      + writeback.py (file-backed history.jsonl)
+└─ memory/ ──────────► writeback.py (file-backed history.jsonl)
 ```
 
 **Critical control flow** (`src/council/pipeline.py:21 → 89`):
@@ -47,7 +46,7 @@ Multi-agent Python 3.12 + FastAPI + LangGraph backend, Next.js 16 + Bun frontend
 1. `run_analysis(query, profile)` → `_collect_data()` (`asyncio.gather` of 3 collectors)
 2. `EmbeddingPipeline.ingest_collected_data()` → Qdrant (skipped if Qdrant down)
 3. `compile_council_graph().ainvoke(initial_state)` → runs 1-3 rounds of debate
-4. `store_analysis_results()` → JSONL append (`data/history.jsonl`) + MemPalace update
+4. `store_analysis_results()` → JSONL append (`data/history.jsonl`)
 5. Returns dict with `agent_outputs`, `divergence_points`, `divergence_status`, `confidence_score`, `report`
 
 **Profile → round mapping** (`council_graph.py:18-23`):
@@ -72,7 +71,7 @@ Multi-agent Python 3.12 + FastAPI + LangGraph backend, Next.js 16 + Bun frontend
 | Add a new agent | `agents/your_agent.py` + `skills/your_agent.md` + wire into `council_graph.py:_run_agent_pair` | Follow node signature in `src/council/agents/AGENTS.md` |
 | Tweak confidence formula | `debate/confidence.py` | v2 sigmoid non-linear penalty at line 19. Inputs are sanitized (verified citations, parsed-only divergences) |
 | Add a data source | `collectors/your_collector.py` + extend `BaseCollector[T]` | Wire in `pipeline.py:_collect_data` |
-| Change persistence | `memory/mempalace.py` (now disk-backed via `storage_path`) + `memory/writeback.py` (JSONL) | Phase 4 marker comments indicate MCP swap points |
+| Change persistence | `memory/writeback.py` (JSONL) | Append-only analysis history |
 | Edit CLI output | `cli.py:analyze()` | Uses `rich` panels/tables |
 | Add API endpoint | `main.py` | Existing endpoints are inline |
 | Add a settings field | `config.py:Settings` + `models/provider_config.py` + dashboard settings card | 4 places must agree |
@@ -293,7 +292,7 @@ See [USAGE.md](USAGE.md) for full step-by-step.
 | Backend | `council-backend:latest` (built from `Dockerfile`) | 8000 | `GET /health` |
 | Dashboard | `council-dashboard:latest` (built from `dashboard/Dockerfile`) | 3000 | implicit (Next.js) |
 
-**Graceful degradation:** every external service wrapped in try/except. App works without Docker using in-memory MemPalace fallback. Tests use heavy mocking.
+**Graceful degradation:** every external service wrapped in try/except. App works without Docker. Tests use heavy mocking.
 
 ---
 
@@ -325,12 +324,12 @@ cd dashboard && bun install && bun run dev
 
 | Phase | Status | Deliverables | Effort |
 |---|---|---|---|
-| **1 — Core Skeleton** | ✅ Done | CLI, 2 agents, Reddit/HN collectors, divergence detection, confidence v2, MemPalace in-memory, Next.js dashboard | shipped |
+| **1 — Core Skeleton** | ✅ Done | CLI, 2 agents, Reddit/HN collectors, divergence detection, confidence v2, Next.js dashboard | shipped |
 | **1.5 — Traceability** | ✅ Done | Citation verification (Module 1), JSONL history (Module 2), parse-error envelopes (Module 3), confidence sanitization (Module 4), retry loops (Module 5) | shipped |
 | **Bug fixes (now)** | 🔜 | Fix Settings page model display · Add minimal streaming indicator · Surface `divergence_status` badge in dashboard · Resolve `devils_advocate.py:214-215` no-op | 1-2 days |
 | **2 — Full Council** | 🔜 | Add `ICP Specialist` agent · Add `Competitive Intel` agent · Enable multi-round debate toggle · Wire Redis cache layer (imported, unused) | 2-3 weeks |
 | **3 — Simulation + UI** | 🔜 | SSE streaming for live LLM thought · Monte Carlo scenarios · GTM simulations · Per-agent real-time thinking panels | 3-4 weeks |
-| **4 — Deploy + Polish** | 🔜 | MemPalace MCP swap (markers already in `memory/mempalace.py`) · PDF report generation · User accounts (User model exists, unused) · Cost dashboard · Railway deploy · CI/CD · Auth | 4-6 weeks |
+| **4 — Deploy + Polish** | 🔜 | PDF report generation · User accounts (User model exists, unused) · Cost dashboard · Railway deploy · CI/CD · Auth | 4-6 weeks |
 
 ### Suggested immediate ordering
 
@@ -374,10 +373,6 @@ Playwright + Chromium is ~400 MB and ~3 min of build time. The crawl4ai collecto
 ### Why Bun 1.3.14 in dashboard image (not latest stable)
 
 The project's `dashboard/bun.lock` is in `lockfileVersion: 1` format (older bun text lockfile). Bun 1.1.x reads it as binary and refuses to install. Bun 1.3.x reads it correctly. The Dockerfile `ARG BUN_VERSION=1.3.14` pins this. If you `bun upgrade` and regenerate the lockfile, bump the arg.
-
-### Why `MEMPALACE_PATH` matters in full-docker mode
-
-The docker stack has the backend mounted to a named volume (`backend_data`) at `/app/data`. Set `MEMPALACE_PATH=data/mempalace.json` in `.env` so the MemPalace snapshot lands inside the volume and survives `docker compose down` (without `-v`). Without it, `MEMPALACE_PATH` is `None` and the snapshot is in-memory only.
 
 ### Build time expectations
 
@@ -460,7 +455,6 @@ cd dashboard && bun run build && bun run start
 cd dashboard && bun run lint
 
 # Validation helpers
-uv run python scripts/validate_phase1.py
 uv run python scripts/smoke_test.py
 ```
 

@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     redis_url: str | None = None
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr | None = None
-    mempalace_path: str | None = None
     max_analyses_per_user_per_day: int = 5
     max_concurrent_analyses: int = 3
     llm_daily_limit: float = 50.0

@@ -149,9 +149,6 @@ async def test_persistence_across_instances(isolated_history):
         confidence_score=10.0,
     )
 
-    # Force a fresh module state by clearing the singleton.
-    writeback._memory_manager = None
-
     detail = writeback.get_analysis(aid)
     assert detail["analysis_id"] == aid
     assert detail["query"] == "persistence-test"
